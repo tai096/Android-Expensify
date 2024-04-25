@@ -18,6 +18,8 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
+import com.example.androidexpensify.RoomPersistence.AppDatabase;
+import com.example.androidexpensify.RoomPersistence.ExpenseEntity;
 import com.example.androidexpensify.Sqlite.DatabaseManager;
 
 import java.io.FileOutputStream;
@@ -37,8 +39,12 @@ public class MainActivity extends AppCompatActivity {
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_main);
 
+        // using sqlite
         DatabaseManager databaseManager = new DatabaseManager(this);
         databaseManager.open();
+
+        // using room persistence
+        AppDatabase appDatabase = AppDatabase.getDatabase(getApplicationContext());
 
         editTextDate = findViewById(R.id.editTextDate);
         editTextExpenseName = findViewById(R.id.editTextExpenseName);
@@ -49,10 +55,39 @@ public class MainActivity extends AppCompatActivity {
         calendarBtn = findViewById(R.id.btnCalendar);
         buttonAddExpense = findViewById(R.id.buttonAddExpense);
 
+        editTextDate.setEnabled(false);
         calendarBtn.setOnClickListener(v -> showDatePickerDialog());
-        buttonAddExpense.setOnClickListener(v -> saveExpenseToSqlite(databaseManager));
+        buttonAddExpense.setOnClickListener(v -> createExpenseUsingRoomPersistence(appDatabase));
     }
 
+    private void showDatePickerDialog() {
+        // Get current date
+        final Calendar calendar = Calendar.getInstance();
+        int year = calendar.get(Calendar.YEAR);
+        int month = calendar.get(Calendar.MONTH);
+        int dayOfMonth = calendar.get(Calendar.DAY_OF_MONTH);
+
+        // Create DatePickerDialog and set listener
+        DatePickerDialog datePickerDialog = new DatePickerDialog(MainActivity.this,
+                (view, _year, _month, _dayOfMonth) -> {
+                    // Set selected date to EditText
+                    String selectedDate = _dayOfMonth + "/" + (_month + 1) + "/" + _year;
+                    editTextDate.setText(selectedDate);
+                }, year, month, dayOfMonth);
+
+        // Show DatePickerDialog
+        datePickerDialog.show();
+    }
+
+    private void clearInputData() {
+        editTextDate.setText("");
+        editTextExpenseName.setText("");
+        editTextExpenseAddress.setText("");
+        editTextExpenseAmount.setText("");
+        switchExpensePaid.setChecked(false);
+    }
+
+    // Using Local Storage ---------------------------------------------
     private void saveExpenseDataToFile() {
         String date = editTextDate.getText().toString();
         String expenseName = editTextExpenseName.getText().toString();
@@ -79,11 +114,7 @@ public class MainActivity extends AppCompatActivity {
 
             Toast.makeText(this, "Expense saved successfully", Toast.LENGTH_SHORT).show();
 
-            editTextDate.setText("");
-            editTextExpenseName.setText("");
-            editTextExpenseAddress.setText("");
-            editTextExpenseAmount.setText("");
-            switchExpensePaid.setChecked(false);
+            clearInputData();
         } catch (IOException e) {
             e.printStackTrace();
             Toast.makeText(this, "Error saving expense", Toast.LENGTH_SHORT).show();
@@ -98,6 +129,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // Using Sqlite -----------------------------------------------------------------------
     private void saveExpenseToSqlite(DatabaseManager databaseManager){
         String date = editTextDate.getText().toString();
         String expenseName = editTextExpenseName.getText().toString();
@@ -107,24 +139,29 @@ public class MainActivity extends AppCompatActivity {
         String expensePaid = String.valueOf(switchExpensePaid.isChecked());
 
         databaseManager.addData(expenseName, expenseCategory, expenseAddress, date, expensePaid, expenseAmount);
+        clearInputData();
     }
 
-    private void showDatePickerDialog() {
-        // Get current date
-        final Calendar calendar = Calendar.getInstance();
-        int year = calendar.get(Calendar.YEAR);
-        int month = calendar.get(Calendar.MONTH);
-        int dayOfMonth = calendar.get(Calendar.DAY_OF_MONTH);
+    // Using Room Persistence ----------------------------------------------
+    private void createExpenseUsingRoomPersistence(AppDatabase appDatabase){
+        String date = editTextDate.getText().toString();
+        String expenseName = editTextExpenseName.getText().toString();
+        String expenseAddress = editTextExpenseAddress.getText().toString();
+        int expenseAmount = Integer.parseInt(editTextExpenseAmount.getText().toString());
+        String expenseCategory = spinnerExpenseCategory.getSelectedItem().toString();
+        String expensePaid = String.valueOf(switchExpensePaid.isChecked());
 
-        // Create DatePickerDialog and set listener
-        DatePickerDialog datePickerDialog = new DatePickerDialog(MainActivity.this,
-                (view, _year, _month, _dayOfMonth) -> {
-                    // Set selected date to EditText
-                    String selectedDate = _dayOfMonth + "/" + (_month + 1) + "/" + _year;
-                    editTextDate.setText(selectedDate);
-                }, year, month, dayOfMonth);
+        new Thread(() -> {
+            ExpenseEntity expense = new ExpenseEntity();
+            expense.name = expenseName;
+            expense.address = expenseAddress;
+            expense.amount = expenseAmount;
+            expense.date = date;
+            expense.category = expenseCategory;
+            expense.isPaid = expensePaid;
 
-        // Show DatePickerDialog
-        datePickerDialog.show();
+            appDatabase.expenseDao().insert(expense);
+            runOnUiThread(()-> clearInputData());
+        }).start();
     }
 }
